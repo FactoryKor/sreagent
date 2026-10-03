@@ -389,7 +389,7 @@ AGW_TOOL    = "agw-diagnose"
 
 1. 새 리포 생성 → 진단기 `.py` + `requirements.txt` + `pyproject.toml`(`[project.scripts]`에 콘솔 명령 등록) + `.github/workflows/notify-mcp.yml` 복사.
 2. `v1.0.0` 태그 push.
-3. `mcp/requirements.txt`에 한 줄 추가 → `mcp/mcp_server.py`에 `@mcp.tool()` 함수 추가(`_run()` 래퍼 사용).
+3. `mcp/requirements.txt`에 한 줄 추가 → `mcp/mcp_server.py`에 `@_tool()` 함수 추가(`_run()` 래퍼 사용 — `@mcp.tool()`을 쓰면 진단이 끝날 때까지 다른 요청이 모두 멈춘다).
 4. 필요하면 `infra/assign-roles.ps1`로 UAMI에 새 리소스 읽기 권한 부여.
 5. SRE Agent 커넥터 재동기화(B-1).
 
@@ -496,7 +496,7 @@ az containerapp ingress traffic set -n <ACA_NAME> -g <ACA_RG> `
 **새 진단 도구 추가**
 - [ ] 새 리포에 `pyproject.toml`(`[project.scripts]`) + `notify-mcp.yml` + `v1.0.0` 태그
 - [ ] `mcp/requirements.txt` 한 줄 추가
-- [ ] `mcp/mcp_server.py`에 `@mcp.tool()` 추가(`_run()` 래퍼 사용)
+- [ ] `mcp/mcp_server.py`에 `@_tool()` 추가(`_run()` 래퍼 사용)
 - [ ] 필요 시 `assign-roles.ps1`로 권한 부여
 - [ ] 커넥터 재동기화 후 도구 목록에 노출 확인
 
