@@ -3,7 +3,10 @@
 # Azure SRE Agent — Custom Agent (Subagent) Instruction Pack
 
 Instruction text for the custom agents ("subagents") that make the **diag-tools MCP server**
-usable from Azure SRE Agent.
+usable against the **Total-Lab / full-lab** environment.
+
+The instruction text in this folder is written in **English** and is meant to be pasted directly into
+**Azure portal → your SRE Agent → Builder → Agent Canvas → Create → Custom Agent**.
 
 Every file exists in two languages. `<name>.en.md` is English, `<name>.md` is Korean, and each
 file links to its counterpart on the first line.
@@ -34,78 +37,90 @@ Source: `Total-Lab/full-lab/main.bicep` + `modules/*.bicep`. Default `namePrefix
 | Dependency Agent (**off by default**) | — | — | `diagnose_service_map` |
 
 Not deployed by this lab: AKS, Event Hubs, Application Gateway, App Service, ADX, SAP HANA.
-Agents for those tools are still provided (see `08-optional-agents.en.md`) so the same MCP
+Agents for those tools are still provided (see `08-optional-agents.md` and `11-appgateway-expert.md`) so the same MCP
 connector can be reused when you extend the lab.
 
 ---
 
-## 2. MCP tools registered on the server
+## 2. MCP tools actually registered on the server
 
 Verified against `FactoryKor/mcp` → `mcp_server.py` (the image running in Azure Container Apps).
 Use these **exact** names when you select Custom Tools for each agent.
 
 | Tool | Required args | Optional args |
 |---|---|---|
-| `diagnose_postgres` | `host` | `user`, `dbname`, `resource_id`, `hours` |
+| `diagnose_postgres` | `host` | `user` (leave empty = MCP identity), `dbname`, `resource_id`, `hours` |
 | `diagnose_mssql` | `host` | `user`, `database`, `auth_mode`, `resource_id`, `region`, `hours`, `password_env` |
 | `diagnose_mysql` | `host` | `user`, `database`, `auth_mode`, `resource_id`, `region`, `hours`, `password_env` |
+| `diagnose_mysql_fleet` | `targets` (list of `host`/`resource_id`/`region`/`database`) | `user`, `auth_mode`, `hours`, `deep`, `password_env`, `max_findings_per_server`, `per_target_timeout` |
 | `diagnose_windows` | `computer` | `workspace_id`, `resource_id`, `hours` |
 | `diagnose_linux` | `computer` | `workspace_id`, `resource_id`, `hours` |
 | `diagnose_service_map` | one of `appinsights_id` / `workspace_id` | `workload`, `window_minutes` |
 | `diagnose_aks` | — | `namespace`, `context`, `all_namespaces`, `prometheus_url`, `appinsights_id` |
 | `diagnose_adx` | `cluster` | `database`, `resource_id`, `region`, `hours` |
 | `diagnose_eventhub` | `resource_id` | `event_hub`, `region`, `window_minutes`, `checkpoint_store` |
-| `diagnose_appgateway` | `resource_id` | `region`, `window_minutes`, `backend_health` |
+| `diagnose_appgateway` | `resource_id` | `region`, `window_minutes`, `backend_health`, `workspace_id` |
 | `diagnose_webapp` | `resource_id` | `region`, `window_minutes` |
 | `diagnose_hana` | `host`+`user` or `userkey` | `port`, `deployment_type`, `hours`, `password_env` |
+| `diagnose_avd` | `host_pool_id` | `workspace_id`, `hours`, `deep`, `max_hosts`, `storage_account_ids`, `anf_volume_ids`, `storage` |
+| `diagnose_citrix` | — | `subscription`, `resource_group`, `vda_prefix`, `connector_prefix`, `connector_vms`, `workspace_id`, `citrix_*`, `api_host`, `client_secret_env`, `hours`, `deep`, storage args |
 
-> `diagnose_postgres` no longer requires `user`. When it is omitted the server falls back to the
-> container's own managed identity name (`DIAG_DB_USER` → `SRE_OPS_PRINCIPAL_NAME`). An
-> authentication failure such as an OID mismatch is almost always a wrong principal name, not a
-> missing permission.
+DB tools (`diagnose_postgres`, `diagnose_mssql`, `diagnose_mysql`, `diagnose_mysql_fleet`) return a
+top-level `diagnostic_identity` object: the MCP managed identity that actually connected. That is
+the principal a DBA must set up — never the SRE Agent identity.
 
-### v1.3+ privileged and deep-analysis tools (`privileged_ops_expert` only)
+### Privileged and deep-analysis tools
 
-The server registers 28 tools in total. Beyond the 12 `diagnose_*` tools above, these come from the
-`sre-ops` layer. Tools marked **approval** are refused with `approval_required` until an
+The server registers 31 tools in total. Beyond the 15 `diagnose_*` tools above, these come from the
+`sre-ops` layer. Which agent gets which tool is defined in `../PRIVILEGED-OPS-BUILD-GUIDE.md`
+(section 9.1): the read-only analysis tools also go to the Windows/Linux experts, everything that
+creates a request or a grant stays with `privileged_ops_expert`. Tools marked **approval** are refused with `approval_required` until an
 administrator approves the matching request out-of-band (`sre-ops approve`).
 
 | Tool | Purpose | Approval |
 |---|---|---|
 | `describe_diagnostic_identity` | Which managed identity needs which permission | — |
+| `ensure_diagnostic_access` | Read-only role (Reader / Monitoring Reader / Log Analytics Reader) for a short TTL; immediate in `auto` mode, approval request in `approval` mode | mode-dependent |
 | `detect_memory_leak` | Time-series regression to name the leaking process | — |
 | `list_os_dumps` | Existing dumps and dump configuration state | — |
 | `preflight_process_dump` | Estimate dump size, pause time, free disk | — |
 | `list_staged_dumps` / `analyze_dump` | Staged dump inventory / structural analysis | — |
 | `request_privileged_action` | Create an approval request (changes nothing) | — |
 | `list_privileged_requests` | Pending approval queue | — |
-| `ensure_diagnostic_access` | Obtain a read-only role when missing — grants immediately in `auto` mode, otherwise creates an approval request | mode-dependent |
 | `grant_temporary_access` | Time-boxed grant (TTL default 60 min, capped by `maxTemporaryAccessMinutes`) | **approval** |
 | `capture_process_dump` / `stage_os_dump` | Capture / export a memory dump | **approval** |
 | `revoke_temporary_access` | Revoke immediately — never needs approval | — |
 | `list_temporary_access` | Active leases; auto-revokes expired ones on every call | — |
 | `get_audit_log` | Append-only audit ledger | — |
+| `approve_privileged_action` | Human approval path for the `secret` channel only. **Never attach to any agent** | n/a |
+
+Every grant goes to the MCP managed identity. `principal_object_id` must be left empty; the server
+rejects any other principal unless the operator listed it in `SRE_OPS_ALLOWED_PRINCIPALS`.
 
 JIT providers: `azure_rbac` (also used for VM Run Command, so **no local admin account is ever
 created on a VM**), `postgresql_entra_admin`, `mysql_entra_admin`, `mssql_entra_admin`. The last
 two replace the single Entra-admin slot and restore the previous admin on revoke.
 
+> `diagnose_windows` / `diagnose_linux` take no `source` argument — Azure Monitor mode only.
+> Direct WinRM/SSH mode exists only in the CLI.
+
 ---
 
 ## 3. Files in this pack
 
-| Korean | English | Custom agent | Purpose |
-|---|---|---|---|
-| `01-lab-orchestrator.md` | `01-lab-orchestrator.en.md` | `lab_diagnostics_orchestrator` | Entry point; discovers targets, fans out, aggregates |
-| `02-windows-os-expert.md` | `02-windows-os-expert.en.md` | `windows_os_expert` | `diagnose_windows` |
-| `03-linux-os-expert.md` | `03-linux-os-expert.en.md` | `linux_os_expert` | `diagnose_linux` |
-| `04-sqlserver-expert.md` | `04-sqlserver-expert.en.md` | `sqlserver_expert` | `diagnose_mssql` (IaaS + Azure SQL) |
-| `05-mysql-expert.md` | `05-mysql-expert.en.md` | `mysql_expert` | `diagnose_mysql` (IaaS + Flexible Server) |
-| `06-postgresql-expert.md` | `06-postgresql-expert.en.md` | `postgresql_expert` | `diagnose_postgres` |
-| `07-service-map-expert.md` | `07-service-map-expert.en.md` | `service_map_expert` | `diagnose_service_map` |
-| `08-optional-agents.md` | `08-optional-agents.en.md` | 6 agents | AKS / ADX / Event Hubs / App Gateway / Web App / HANA |
-| `09-shared-conventions.md` | `09-shared-conventions.en.md` | — | Text blocks reused by every agent |
-| `10-privileged-ops-expert.md` | `10-privileged-ops-expert.en.md` | `privileged_ops_expert` | JIT grant/revoke, leak detection, dumps, audit ledger |
+| File | Custom agent | Purpose |
+|---|---|---|
+| `01-lab-orchestrator.md` | `lab_diagnostics_orchestrator` | Entry point; discovers targets, fans out, aggregates |
+| `02-windows-os-expert.md` | `windows_os_expert` | `diagnose_windows` + leak/dump read-only analysis |
+| `03-linux-os-expert.md` | `linux_os_expert` | `diagnose_linux` + leak/dump read-only analysis |
+| `04-sqlserver-expert.md` | `sqlserver_expert` | `diagnose_mssql` (IaaS + Azure SQL) |
+| `05-mysql-expert.md` | `mysql_expert` | `diagnose_mysql`, `diagnose_mysql_fleet` (IaaS + Flexible Server) |
+| `06-postgresql-expert.md` | `postgresql_expert` | `diagnose_postgres` |
+| `07-service-map-expert.md` | `service_map_expert` | `diagnose_service_map` |
+| `08-optional-agents.md` | 5 agents | AKS / ADX / Event Hubs / Web App / HANA (8.4 App Gateway moved to `11`) |
+| `09-shared-conventions.md` | — | Text blocks reused by every agent (output contract, output language, environment profile, guardrails) |
+| `10-privileged-ops-expert.md` | `privileged_ops_expert` | JIT grant/revoke, leak detection, dumps, audit ledger |
+| `11-appgateway-expert.md` | `appgateway_expert` | `diagnose_appgateway` — backend health, gateway-vs-backend 502/504, TLS/certificates, capacity, access/WAF logs |
 
 ---
 
@@ -122,52 +137,52 @@ results. For customer-facing documents each agent can emit a severity mapping ta
 endpoint, basic/burstable SKU, no HA, minimal retention, synthetic traffic — apply **only when
 ENVIRONMENT = lab**. Against a customer production environment the agents keep the original
 severity. When the profile is ambiguous the agents ask once and otherwise assume production.
-See `09-shared-conventions.en.md` sections F and G.
-
-**Two rules that exist because they were violated in practice.** Section I forbids an agent from
-creating any permission by any route, including `az rest` and `az role assignment create`, even
-when an approval prompt appears. Section J forbids rebuilding a failed diagnosis out of `az` CLI
-output and presenting it as the diagnosis.
-
----
-
+See `09-shared-conventions.md` sections F and G.
 ## 4. Recommended build order
 
 1. Create the **domain experts** first (02 → 07). They have no handoff dependencies.
-2. Create `privileged_ops_expert` (10) if `enablePrivilegedOps=true` was deployed.
-3. Create `lab_diagnostics_orchestrator` (01) last and set its **Handoff Agents** to all experts.
-4. In each agent, attach only the MCP tool(s) listed in its file — one tool per expert keeps the
-   tool-selection decision trivial and avoids cross-domain hallucination.
-5. Also attach a read-only **Azure Resource Graph / Azure CLI** built-in tool to every expert.
-   The MCP tools require ARM resource IDs and workspace GUIDs that only Resource Graph can supply.
-6. Run each agent once in **Builder → Agent Canvas → Test playground** with the sample prompt
+2. Create `lab_diagnostics_orchestrator` (01) last and set its **Handoff Agents** to all experts.
+3. In each agent, attach only the MCP tools listed in its file. **Do not use the connector
+   wildcard (`<connection>/*`)** — it hands `grant_temporary_access`, `capture_process_dump` and the
+   other privileged tools to every expert. The per-agent matrix is in
+   `../PRIVILEGED-OPS-BUILD-GUIDE.md`, section 9.1.
+4. For built-in tools select **`RunAzCliReadCommands` only** (Resource Graph / az read) plus
+   `execute_kusto_query`. Never select `RunAzCliWriteCommands` or `RunPsqlReadCommand` for any agent
+   in this pack, and keep **Enable skills off** for the experts. The MCP tools require ARM resource
+   IDs and workspace GUIDs that only Resource Graph can supply.
+5. Run each agent once in **Builder → Agent Canvas → Test playground** with the sample prompt
    included at the bottom of each file.
 
 ---
 
 ## 5. Run mode and tool policy
 
-- All 12 `diagnose_*` tools are **strictly read-only**. Set them to **allow** in tool access policies.
-- Privileged tools belong to `privileged_ops_expert` only. Do not attach them to domain experts.
-- Keep response plans / scheduled tasks in **Review** mode while validating the lab.
-- If you attach `azure_cli` to any agent, the instruction blocks forbid write verbs
-  (`create`, `delete`, `update`, `set`, `restart`, `scale`, `start`, `stop`) **and** any form of
-  permission granting.
+- All `diagnose_*` tools and the read-only analysis tools are **strictly read-only**. Allow them in
+  tool access policies.
+- Keep response plans / scheduled tasks in **Review** mode while validating the lab. The experts
+  never mutate anything, but the orchestrator may propose Azure CLI mitigations.
+- Instruction text alone does not stop the **main agent** — it is not bound by these prompts and
+  holds every built-in tool. Add the **global deny** policies from
+  `../PRIVILEGED-OPS-BUILD-GUIDE.md` section 8.4 (`ad-admin`, `role assignment create`,
+  `RunPsqlReadCommand`, …). That is what actually stops "grant the SRE Agent a DB admin role".
 
 ---
 
 ## 6. Prerequisites the agents cannot fix themselves
 
+The instruction blocks tell each agent to report these as blockers instead of looping:
+
 | Tool | Prerequisite | Where to fix |
 |---|---|---|
-| `diagnose_postgres` | MCP managed identity registered as Entra admin in PostgreSQL + `GRANT pg_monitor` | Flexible Server → Authentication |
-| `diagnose_mssql` (Azure SQL) | MCP managed identity created as a contained DB user with VIEW DATABASE STATE / VIEW SERVER STATE | `CREATE USER [<mi-name>] FROM EXTERNAL PROVIDER` |
-| `diagnose_mssql` (all) | **Microsoft ODBC Driver 18 present in the MCP image** — only this tool uses a native driver | rebuild image with `msodbcsql18`; verify with `odbcinst -q -d` |
+| `diagnose_postgres` | MCP managed identity (`diagnostic_identity.principal_name`) registered as Entra role in PostgreSQL + `GRANT pg_monitor` | Flexible Server → Authentication |
+| `diagnose_mssql` (Azure SQL) | MCP managed identity created as a contained DB user with VIEW DATABASE STATE (+ `##MS_ServerStateReader##` in master for instance-wide DMVs) | `CREATE USER [<mi-name>] FROM EXTERNAL PROVIDER` |
+| `diagnose_mysql` (`auth_mode="entra"`) | Entra auth enabled + MCP managed identity created as `AADUSER` with PROCESS / REPLICATION CLIENT / SELECT on performance_schema | Flexible Server → Authentication |
 | `diagnose_mssql` (IaaS, `auth_mode="sql"`) | `MSSQL_DIAGNOSE_PASSWORD` env var injected into the Container App | ACA → Containers → Environment variables / Key Vault ref |
 | `diagnose_mysql` (`auth_mode="mysql"`) | `MYSQL_DIAGNOSE_PASSWORD` env var injected into the Container App | same as above |
 | `diagnose_windows` / `diagnose_linux` | AMA + DCR association active; allow 10–15 min after deploy for first data | `<prefix>-dcr-windows` / `<prefix>-dcr-linux` |
 | `diagnose_service_map` | Dependency Agent installed (`00_deploy.ps1 -EnableDependencyAgent`) and 15–60 min of traffic | redeploy lab with the switch |
-| All | MCP managed identity holds `Reader` + `Monitoring Reader` on the target scope | `infra/assign-roles.ps1`, or `ensure_diagnostic_access` at run time |
+| All | MCP managed identity holds `Reader` + `Monitoring Reader` on the lab resource group | `infra/assign-roles.ps1` |
+| `list_os_dumps` / `preflight_process_dump` / `capture_process_dump` / `stage_os_dump` | MCP managed identity holds the `SRE Diagnostic Run Command Operator` role on the VM resource group | `infra/assign-privileged-roles.ps1 -RunCommandScope` |
 
 ---
 

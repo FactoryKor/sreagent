@@ -6,7 +6,7 @@
 |---|---|
 | **Name** | `service_map_expert` |
 | **Custom Tools** | `diagnose_service_map` (diag-tools MCP 커넥터) |
-| **Built-in Tools** | Azure Resource Graph / Azure CLI (읽기 전용), `execute_kusto_query` |
+| **Built-in Tools** | `RunAzCliReadCommands`만 (`RunAzCliWriteCommands`는 절대 선택하지 않음), `execute_kusto_query` |
 | **Handoff Agents** | `windows_os_expert`, `linux_os_expert`, `sqlserver_expert`, `mysql_expert`, `postgresql_expert`, `lab_diagnostics_orchestrator` |
 
 > 포털에 붙여넣을 때는 영문판(`07-service-map-expert.en.md`)의 Instructions 블록을 쓰십시오.
@@ -213,9 +213,9 @@ system_prompt: |
   (위 Instructions 블록을 붙여넣으십시오)
 tools:
   - diagnose_service_map
-  - azure_cli
+  - azure_cli            # 포털: RunAzCliReadCommands만 선택, RunAzCliWriteCommands는 절대 선택 금지
   - execute_kusto_query
-enable_skills: true
+enable_skills: false     # 스킬이 쓰기 도구를 이 에이전트에 끌어올 수 있으므로 읽기 전용 전문가는 끈 상태 유지
 ```
 
 **테스트 플레이그라운드 프롬프트**

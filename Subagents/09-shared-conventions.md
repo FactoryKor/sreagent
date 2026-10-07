@@ -159,10 +159,15 @@ Private Endpoint 없음, 최소 백업 보존, 주기적 합성 트래픽 같은
 
 ## H. 특권(JIT) 도구 — 누가 호출할 수 있나
 
-전문가 에이전트는 읽기 전용이며 특권 도구를 호출해서는 안 됩니다. `privileged_ops_expert`만
-갖고 있습니다. 진단 주체에게 데이터베이스 관리자 역할이나 호스트 수준 권한이 없어 진단이
+전문가 에이전트는 요청이나 권한 부여를 만드는 도구를 호출해서는 안 됩니다. `privileged_ops_expert`만
+그런 도구를 갖고 있습니다. Windows/Linux 전문가는 아무것도 바꾸지 않는 읽기 전용 분석 도구
+(`detect_memory_leak`, `list_os_dumps`, `preflight_process_dump`, `list_staged_dumps`,
+`analyze_dump`)는 가질 수 있습니다. 진단 주체에게 데이터베이스 관리자 역할이나 호스트 수준 권한이 없어 진단이
 막히면, 전문가는 재시도하지 말고 비밀번호를 요구하지도 말고 **대상, 정확히 어떤 권한이
 없는지, 왜 필요한지**를 담아 `privileged_ops_expert`로 넘깁니다.
+
+모든 권한 부여는 MCP 관리 ID에게 갑니다. `principal_object_id`는 항상 비워 둡니다. 서버는 그 밖의
+주체를 거부합니다.
 
 특권 도구를 가진 에이전트는 이 규칙을 지킵니다. **임시 권한이 필요했던 진단이 끝나면 즉시
 `revoke_temporary_access`를 호출하고 그 결과를 보고서 마지막 줄에 적습니다.** 회수에 실패하면
@@ -189,9 +194,14 @@ az sql server ad-admin create ...
 
 **올리기 전에 먼저 진단하십시오.** 인증 실패는 권한 부족보다 주체 이름이 틀린 경우가 훨씬
 많습니다. 데이터베이스나 호스트에 접속하는 주체는 항상 **MCP 컨테이너의 관리 ID**이며,
-에이전트 자신의 관리 ID가 아닙니다. `describe_diagnostic_identity`를 호출해 보낸 `user` 인자와
-비교하고 재시도하십시오. 주체가 확실히 맞는데도 거부될 때만 권한 문제이고, 그때
-`privileged_ops_expert`로 넘깁니다.
+에이전트 자신의 관리 ID가 아닙니다. DB 도구 결과는 최상위 `diagnostic_identity` 객체에 이 주체를
+담아 돌려주며, 없으면 `describe_diagnostic_identity`를 호출하십시오. 보낸 `user` 인자와
+비교하고(Entra라면 `user`는 그냥 비워 두면 됩니다) 재시도하십시오. 주체가 확실히 맞는데도
+거부될 때만 권한 문제이고, 그때 `privileged_ops_expert`로 넘깁니다.
+
+`RunPsqlReadCommand` 같은 기본 제공 데이터베이스 도구로 데이터베이스를 조회하지 마십시오. 이 도구는
+SRE Agent ID로 실행되어 실패하고, 바로 그 실패가 에이전트로 하여금 "SRE Agent에 DB 관리자 역할을
+부여"하게 만듭니다. 전역 도구 액세스 정책에서 아예 거부해야 합니다(`../PRIVILEGED-OPS-BUILD-GUIDE.md` 참조).
 
 ## J. 실패한 진단을 다른 도구로 대체하지 말 것
 

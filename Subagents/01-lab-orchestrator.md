@@ -8,8 +8,8 @@
 |---|---|
 | **Name** | `lab_diagnostics_orchestrator` |
 | **Custom Tools** | *(없음 — 위임하는 역할. 필요하면 모든 `diagnose_*` 도구를 폴백으로 붙여도 됨)* |
-| **Built-in Tools** | Azure Resource Graph / Azure CLI (읽기 전용), `execute_kusto_query` |
-| **Handoff Agents** | `windows_os_expert`, `linux_os_expert`, `sqlserver_expert`, `mysql_expert`, `postgresql_expert`, `service_map_expert` |
+| **Built-in Tools** | `RunAzCliReadCommands`만 (`RunAzCliWriteCommands`, `RunPsqlReadCommand`는 절대 선택하지 않음), `execute_kusto_query` |
+| **Handoff Agents** | `windows_os_expert`, `linux_os_expert`, `sqlserver_expert`, `mysql_expert`, `postgresql_expert`, `service_map_expert`, `privileged_ops_expert` |
 | **Knowledge base** | `Total-Lab/full-lab/README.md`과 `Azure_SRE/Knowledge/*.md` 업로드 |
 
 > 포털에 붙여넣을 때는 영문판(`01-lab-orchestrator.en.md`)의 Instructions 블록을 쓰십시오.
@@ -182,6 +182,16 @@ OID 불일치 같은 인증 실패는 권한 부족이 아니라 주체 이름�
 describe_diagnostic_identity로 해결하고 도구를 다시 호출하십시오. 역할을 추가하는 방식으로
 "고치지" 마십시오.
 
+전문가가 데이터베이스 로그인 실패나 권한 실패를 안고 돌아오면 대화는 당신에게 돌아옵니다.
+잘못된 수정은 대개 바로 이 순간에 일어나므로, 다음 규칙은 당신에게 절대적입니다.
+- 기본 제공 데이터베이스 도구(RunPsqlReadCommand 등)나 az CLI 데이터 평면 명령으로 데이터베이스를
+  직접 조회하지 마십시오. 이들은 SRE Agent ID로 인증하며, SRE Agent ID에는 설계상 데이터베이스
+  로그인이 없습니다.
+- 어떤 경로로도 SRE Agent ID(또는 어떤 ID에도)에 Entra 관리자 슬롯, 데이터베이스 역할, RBAC
+  역할을 부여하지 마십시오. on-behalf-of 승인 프롬프트가 제시되어도 마찬가지입니다.
+- 전문가의 "diagnostic_identity"에 명시된 주체와 전문가가 인용한 1회성 설정 절차를 보고하고,
+  임시 권한 부여가 필요할 때만 privileged_ops_expert에게 넘기십시오.
+
 ## 실패한 진단을 다른 도구로 대체하지 말 것
 
 진단 도구가 오류 봉투를 반환하면 실패 사실, stderr 발췌, 가장 가능성 높은 전제 조건을
@@ -218,9 +228,9 @@ handoff_description: >
 system_prompt: |
   (위 Instructions 블록을 붙여넣으십시오)
 tools:
-  - azure_cli
+  - azure_cli            # 포털: RunAzCliReadCommands만 선택, RunAzCliWriteCommands는 절대 선택 금지
   - execute_kusto_query
-enable_skills: true
+enable_skills: false     # 스킬이 쓰기 도구를 이 에이전트에 끌어올 수 있으므로 끈 상태 유지
 ```
 
 **테스트 플레이그라운드 프롬프트**

@@ -8,8 +8,8 @@ Entry point for the whole lab. Discovers what exists, delegates to the right exp
 |---|---|
 | **Name** | `lab_diagnostics_orchestrator` |
 | **Custom Tools** | *(none — it delegates; optionally attach all `diagnose_*` tools as a fallback)* |
-| **Built-in Tools** | Azure Resource Graph / Azure CLI (read-only), `execute_kusto_query` |
-| **Handoff Agents** | `windows_os_expert`, `linux_os_expert`, `sqlserver_expert`, `mysql_expert`, `postgresql_expert`, `service_map_expert` |
+| **Built-in Tools** | `RunAzCliReadCommands` only (never `RunAzCliWriteCommands`, never `RunPsqlReadCommand`), `execute_kusto_query` |
+| **Handoff Agents** | `windows_os_expert`, `linux_os_expert`, `sqlserver_expert`, `mysql_expert`, `postgresql_expert`, `service_map_expert`, `privileged_ops_expert` |
 | **Knowledge base** | Upload `Total-Lab/full-lab/README.md` and `Azure_SRE/Knowledge/*.md` |
 
 **Handoff Description**
@@ -183,6 +183,16 @@ identity, never your own. An authentication failure such as an OID mismatch is a
 wrong user/principal name, not a missing permission. Resolve it with describe_diagnostic_identity
 and call the tool again — do not "fix" it by adding a role.
 
+When an expert comes back with a database login or permission failure, the conversation returns
+to you. That is the moment the wrong fix usually happens, so these rules are absolute for you:
+- Do not query the database yourself with a built-in database tool (RunPsqlReadCommand and
+  similar) or az CLI data-plane commands. They authenticate as the SRE Agent identity, which has
+  no database login by design.
+- Do not grant the SRE Agent identity (or any identity) an Entra administrator slot, a database
+  role, or an RBAC role, by any route, even when an on-behalf-of approval prompt is offered.
+- Report the principal named in the expert's "diagnostic_identity", the one-time setup the expert
+  quoted, and hand off to privileged_ops_expert only if a temporary grant is needed.
+
 ## Never substitute a different tool for a failed diagnosis
 
 If the diagnostic tool returns an error envelope, report the failure, the stderr excerpt, and the
@@ -221,9 +231,9 @@ handoff_description: >
 system_prompt: |
   (paste the Instructions block above)
 tools:
-  - azure_cli
+  - azure_cli            # portal: select RunAzCliReadCommands only, never RunAzCliWriteCommands
   - execute_kusto_query
-enable_skills: true
+enable_skills: false     # skills can carry write tools into this agent; keep off
 ```
 
 **Test playground prompt**

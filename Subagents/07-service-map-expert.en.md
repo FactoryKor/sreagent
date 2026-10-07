@@ -6,7 +6,7 @@
 |---|---|
 | **Name** | `service_map_expert` |
 | **Custom Tools** | `diagnose_service_map` (diag-tools MCP connector) |
-| **Built-in Tools** | Azure Resource Graph / Azure CLI (read-only), `execute_kusto_query` |
+| **Built-in Tools** | `RunAzCliReadCommands` only (never `RunAzCliWriteCommands`), `execute_kusto_query` |
 | **Handoff Agents** | `windows_os_expert`, `linux_os_expert`, `sqlserver_expert`, `mysql_expert`, `postgresql_expert`, `lab_diagnostics_orchestrator` |
 
 **Handoff Description**
@@ -218,9 +218,9 @@ system_prompt: |
   (paste the Instructions block above)
 tools:
   - diagnose_service_map
-  - azure_cli
+  - azure_cli            # portal: select RunAzCliReadCommands only, never RunAzCliWriteCommands
   - execute_kusto_query
-enable_skills: true
+enable_skills: false     # skills can carry write tools into this agent; keep off for read-only experts
 ```
 
 **Test playground prompt**

@@ -156,10 +156,16 @@ State the profile you applied in the Evidence line: `environment: lab` or `envir
 
 ## H. Privileged (JIT) tools — who may call them
 
-Expert agents are read-only and must not call privileged tools. Only `privileged_ops_expert` holds
-them. If a diagnosis is blocked because the diagnostic identity lacks a database admin role or a
-host-level permission, an expert must not retry and must not ask for a password — it hands off to
-`privileged_ops_expert` with the target, the exact missing permission, and the reason.
+Expert agents must not call tools that create a request or a grant. Only `privileged_ops_expert`
+holds them. The Windows/Linux experts may hold the read-only analysis tools
+(`detect_memory_leak`, `list_os_dumps`, `preflight_process_dump`, `list_staged_dumps`,
+`analyze_dump`) because those change nothing. If a diagnosis is blocked because the diagnostic
+identity lacks a database admin role or a host-level permission, an expert must not retry and must
+not ask for a password — it hands off to `privileged_ops_expert` with the target, the exact missing
+permission, and the reason.
+
+Every grant goes to the MCP managed identity. `principal_object_id` is always left empty; the
+server rejects any other principal.
 
 Any agent that does hold privileged tools obeys this rule: **after the diagnosis that required the
 temporary grant finishes, call `revoke_temporary_access` immediately and report the outcome on the
@@ -187,10 +193,15 @@ automatic revocation, and no entry in the audit ledger.
 
 **Diagnose before you escalate.** An authentication failure is far more often a wrong principal
 name than a missing permission. The principal that connects to a database or a host is always the
-**MCP container's managed identity**, never the agent's own identity. Call
-`describe_diagnostic_identity`, compare it with the `user` argument you sent, and retry. Only when
-the principal is provably correct and still refused is it a permission problem — and then you hand
-off to `privileged_ops_expert`.
+**MCP container's managed identity**, never the agent's own identity. DB tool results carry it in
+the top-level `diagnostic_identity` object; otherwise call `describe_diagnostic_identity`. Compare
+it with the `user` argument you sent (for Entra the `user` should simply be left empty), and retry.
+Only when the principal is provably correct and still refused is it a permission problem — and
+then you hand off to `privileged_ops_expert`.
+
+Never query a database with a built-in database tool such as `RunPsqlReadCommand`. It runs as the
+SRE Agent identity, fails, and the failure is what leads agents to "grant the SRE Agent a DB admin
+role". Global tool access policies should deny it outright (see `../PRIVILEGED-OPS-BUILD-GUIDE.md`).
 
 ## J. Never substitute a different tool for a failed diagnosis
 
